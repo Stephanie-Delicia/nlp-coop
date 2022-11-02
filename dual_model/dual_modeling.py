@@ -38,7 +38,6 @@ class DualModel(PreTrainedModel):
     self.auxillary_model = AutoModelForSequenceClassification.from_pretrained(auxillary_model)
     self.epsilon = epsilon
     self.num_candidates = num_candidates
-    self.lm_head = self.generation_model.lm_head
     self.config = config
     self.pos_label_index = pos_label_index
     self.estimated_score = estimated_score
