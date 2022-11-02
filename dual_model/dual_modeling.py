@@ -10,8 +10,6 @@ import torch
 from transformers.modeling_utils import PreTrainedModel
 from typing import List, Optional
 
-logging.basicConfig(format='%(asctime)s %(message)s')
-
 """
 A class representing a model which is an encapsulation of a generation and a sentiment model.
 During generation, the model chooses the top n generation logits and computes their
@@ -87,8 +85,6 @@ class DualModel(PreTrainedModel):
                 output_hidden_states=output_hidden_states,
                 return_dict=True,)
     n = self.num_candidates
-    print("Generation model: " + str(self.generation_model.device))
-    print("auxillary model: " + str(self.auxillary_model.device))
     # returns array of indices of n top logit values per beam
     new_logits = base_outputs.logits.clone().cpu()
     top_logit_indices = []
@@ -97,7 +93,6 @@ class DualModel(PreTrainedModel):
         top_logits = top_logits.to(self.device)
         top_logit_indices.append(top_logits.tolist()) 
     new_logits = new_logits.to(self.device)
-    #logging.warning("Obtained top n words per beam.")
 
     # Create list of the possible sequences with every top w_i candidate (w_i + w_{i - 1}...) per beam
     # TODO: I think this part is running very slowly..
@@ -108,12 +103,9 @@ class DualModel(PreTrainedModel):
         for cand in top_logit_indices[i]:
             cand_seq = torch.cat((current_seq_ids_per_beam[i], torch.tensor([cand]).to(self.device)), 0) # create candidate seq.
             cand_seq = torch.tensor([cand_seq.tolist()]).to(self.device)
-            #logging.warning("Created a candidate sequence.")
             cand_seq_score = torch.softmax(self.auxillary_model(cand_seq).logits, dim=1).to(self.device).tolist()[0][pos_index]
-            #logging.warning("Scored the sequence.")
             candidate_seqs.append(cand_seq_score) # append score of this seq. of this beam
         sentiment_scores_seq_candidates.append(candidate_seqs)
-    #logging.warning("Created and scored sentiment of candidate sequences.")
 
     # Filter logits by sentiment scores
     final_candidate_indices_per_beam = [] # list of candidate indices per beam
@@ -123,7 +115,6 @@ class DualModel(PreTrainedModel):
         filtered_indices = [top_indices_of_this_beam[i] for i in range(len(beam_scores)) # filter by |score - estimated_score| <= epsilon
         if abs(beam_scores[i] - self.estimated_score) <= self.epsilon]
         final_candidate_indices_per_beam.append(filtered_indices)
-    #logging.warning("Computed sentiment scores and obtained final candidate words.")
 
     # Set filtered logits to -10000
     mask = -10000
@@ -131,16 +122,7 @@ class DualModel(PreTrainedModel):
         for index in range(len(new_logits[beam][0])):               # access logits per beam
             if index not in final_candidate_indices_per_beam[beam]: # if index of logit is not in candidate indices
                 new_logits[beam][0][index] = mask
-    logging.warning("Finished filtering round.")
 
-    # torch.save(new_logits,  'new_logits')
-    # torch.save(base_outputs,  'base_outputs')
-    # torch.save(base_outputs.logits,  'base-logits')
-    # torch.save(decoder_input_ids,  'decoder_input_ids')
-    # torch.save(top_logit_indices,  'top_logit_indices')
-    # torch.save(current_seq_ids_per_beam,  'current_seq_ids_per_beam')
-    # torch.save(sentiment_scores_seq_candidates,  'sentiment_scores_seq_candidates')
-    # torch.save(final_candidate_indices_per_beam,  'final_candidate_indices_per_beam')
     base_outputs.logits = new_logits
     return base_outputs
 
@@ -163,7 +145,7 @@ class DualModel(PreTrainedModel):
 
     return {
         "input_ids": None,  # encoder_outputs is defined. input_ids not needed
-        "current_seq_ids_per_beam": current_seq_ids_per_beam,
+        "current_seq_ids_per_beam": current_seq_ids_per_beam, # added current sequence per beam
         "encoder_outputs": encoder_outputs,
         "past_key_values": past,
         "decoder_input_ids": decoder_input_ids,
