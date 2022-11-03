@@ -85,13 +85,8 @@ class DualModel(PreTrainedModel):
                 return_dict=True,)
     n = self.num_candidates
     # returns array of indices of n top logit values per beam
-    new_logits = base_outputs.logits.clone().cpu()
-    top_logit_indices = []
-    for i in range(new_logits.shape[0]): 
-        top_logits = np.argpartition(new_logits[i][0], -n)[-n:]
-        top_logits = top_logits.to(self.device)
-        top_logit_indices.append(top_logits.tolist()) 
-    new_logits = new_logits.to(self.device)
+    new_logits = base_outputs.logits.clone()
+    top_logit_indices = torch.topk(new_logits, n).indices.tolist()
 
     # Create list of the possible sequences with every top w_i candidate (w_i + w_{i - 1}...) per beam
     # TODO: I think this part is running very slowly..
