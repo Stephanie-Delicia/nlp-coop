@@ -2,7 +2,7 @@
 Stephanie M.
 Teacher forced generations
 """
-import logging
+import cProfile
 from transformers import AutoModelForSeq2SeqLM
 from transformers import AutoModelForSequenceClassification
 import numpy as np
@@ -90,16 +90,16 @@ class DualModel(PreTrainedModel):
 
     # Create list of the possible sequences with every top w_i candidate (w_i + w_{i - 1}...) per beam
     # TODO: I think this part is running very slowly..
-    sentiment_scores_seq_candidates = [] 
+    positive_candidate_scores = [] 
     pos_index = self.pos_label_index
-    for i in range(len(current_seq_ids_per_beam)):
-        candidate_seqs = []
-        for cand in top_logit_indices[i]:
-            cand_seq = torch.cat((current_seq_ids_per_beam[i], torch.tensor([cand]).to(self.device)), 0) # create candidate seq.
-            cand_seq = torch.tensor([cand_seq.tolist()]).to(self.device)
-            cand_seq_score = torch.softmax(self.auxillary_model(cand_seq).logits, dim=1).to(self.device).tolist()[0][pos_index]
-            candidate_seqs.append(cand_seq_score) # append score of this seq. of this beam
-        sentiment_scores_seq_candidates.append(candidate_seqs)
+    for beam in range(len(current_seq_ids_per_beam)):
+        candidate_scores = []
+        candidate_seqs = current_seq_ids_per_beam[beam].repeat(len(top_logit_indices[beam][0]), 1) # repeat current seq. per candidate
+        transpose_cand = torch.transpose(top_logit_indices[beam], 0, 1)
+        candidate_seqs = torch.cat((candidate_seqs, transpose_cand), 1)                            # concat. current seq. w/ candidate
+        pos_scores = torch.softmax(self.auxillary_model(candidate_seqs).logits, dim=1).to(self.device)
+        pos_scores = pos_scores.select(1, pos_index) # select scores for pos. sentiment
+        positive_candidate_scores.append(pos_scores)
 
     # Filter logits by sentiment scores
     final_candidate_indices_per_beam = [] # list of candidate indices per beam
