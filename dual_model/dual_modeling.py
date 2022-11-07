@@ -93,13 +93,26 @@ class DualModel(PreTrainedModel):
     positive_candidate_scores = [] 
     pos_index = self.pos_label_index
     for beam in range(len(current_seq_ids_per_beam)):
-        candidate_scores = []
-        candidate_seqs = current_seq_ids_per_beam[beam].repeat(len(top_logit_indices[beam][0]), 1) # repeat current seq. per candidate
-        transpose_cand = torch.transpose(top_logit_indices[beam], 0, 1)
-        candidate_seqs = torch.cat((candidate_seqs, transpose_cand), 1)                            # concat. current seq. w/ candidate
-        pos_scores = torch.softmax(self.auxillary_model(candidate_seqs).logits, dim=1).to(self.device)
-        pos_scores = pos_scores.select(1, pos_index) # select scores for pos. sentiment
-        positive_candidate_scores.append(pos_scores)
+        candidate_seqs = current_seq_ids_per_beam[beam].repeat(len(top_logit_indices[beam][0]), 1) # repeat current seq. per cand.
+        transpose_cand = torch.transpose(top_logit_indices[beam], 0, 1) # prepare cand.'s for concat.
+        candidate_seqs = torch.cat((candidate_seqs, transpose_cand), 1) 
+        pos_scores = []
+        # Separately scoring seq.'s for when a cand. = eos to avoid "All examples must have the same number of <eos> tokens." error
+        if 2 in top_logit_indices[beam][0]:
+            index_to_remove = 0
+            for count, cand in enumerate(top_logit_indices[beam][0]):
+                if cand == 2:
+                    index_to_remove = count
+            removed_seq = torch.select(candidate_seqs, 0, index_to_remove)
+            removed_seq = torch.tensor([removed_seq.tolist()])
+            candidate_seqs = torch.cat([candidate_seqs[:index_to_remove], candidate_seqs[index_to_remove + 1:]], 0)
+            pos_score_removed = torch.softmax(self.auxillary_model(removed_seq).logits, dim=1).to(self.device)
+            pos_scores = torch.softmax(self.auxillary_model(candidate_seqs).logits, dim=1).to(self.device) # score every seq.
+            pos_scores = torch.cat([pos_scores[:index_to_remove], pos_score_removed, pos_scores[index_to_remove:]], 0)
+        else: # no cand.'s = eos
+            pos_scores = torch.softmax(self.auxillary_model(candidate_seqs).logits, dim=1).to(self.device) # score every seq.
+        pos_scores = pos_scores.select(1, pos_index) # select scores from the pos. index
+        positive_candidate_scores.append(pos_scores) # for this beam
 
     # Filter logits by sentiment scores
     final_candidate_indices_per_beam = [] # list of candidate indices per beam
